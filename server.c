@@ -11,14 +11,6 @@
 
 
 
-const char *request =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 5\r\n"
-    "Connection: close\r\n"
-    "hello\r\n"
-    "\r\n";
-
 struct request{
 
     char methode[16];
@@ -59,28 +51,6 @@ int setup_server(){
     return listen_fd;
 }
 
- int handle_client(int server_fd, int client_fd, const char* request, char* buffer){
-    
-    while(1){
-
-        printf("connection established\n");
-        printf("the socket of this new client is : %d\n", client_fd);
-        size_t bytes_read = recv(client_fd, buffer, 4095, 0);
-
-        if(bytes_read <= 0){
-            perror("recv");
-            close(client_fd);
-            return -1;
-        }
-
-        buffer[bytes_read] = '\0';
-        if(send(client_fd, request, strlen(request),0) == -1) perror("send");
-
-        close(client_fd);
-        break;
-    }
- }
-        
 int readline(char* buffer, char* line, int line_n){
 
     char* current_buffer = buffer;
@@ -163,18 +133,81 @@ int parse_request(char* buffer, struct request *r){
     return 0;
 }
 
+int respond(char* buffer, struct request *r, int parse_request_return){
+
+    int status_code = 404;
+    char *header_something = "Not Found";
+    char *body = "404 page not found";
+    char chosen_path_from_the_client[256];
+    int result;
+
+    if(parse_request_return == -1){
+        int status_code = 400;
+        body = "bad Request";
+    }
+    if(strcmp(r->methode, "GET") == 0) {
+
+        if(strcmp(r->path, "/contact")==0){
+            status_code = 200;
+            header_something = "OK";
+            body = "contact";
+        }
+        if(strcmp(r->path, "/about")==0){
+            status_code = 200;
+            header_something = "OK";
+            body = "about";
+        }
+    
+        
+    }result = snprintf(buffer,1000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnetion: close\r\n\r\n%s", status_code, header_something, strlen(body), body);
+
+    return result;
+    
+}
+
+ int handle_client(int server_fd, int client_fd, char* buffer_request, struct request *r){
+    
+    while(1){
+
+        printf("connection established\n");
+        printf("the socket of this new client is : %d\n", client_fd);
+        ssize_t bytes_read = recv(client_fd, buffer_request, 4095, 0);
+
+        if(bytes_read <= 0){
+            perror("recv");
+            close(client_fd);
+            return -1;
+        }
+
+        
+        buffer_request[bytes_read] = '\0';
+        memset(r, 0, sizeof(*r));
+
+        int parse_request_return = parse_request(buffer_request, r);
+       
+        char buffer_respond[4096];
+        respond(buffer_respond, r, parse_request_return);
+        if(parse_request_return == -1) return -1;
+        
+        if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) perror("send");
+
+        close(client_fd);
+        break;
+    }
+ }
+        
+
+
+
+
 int main(){
 
-    char buffer[4096];
-
+    char buffer_request[4096];
     int server_fd = setup_server();
 
     struct sockaddr_in client_address;
     socklen_t client_address_size = sizeof(client_address);
     int client_fd;
-
-
-    
     while(1)
     {
         client_fd = accept(server_fd, (struct sockaddr *) &client_address,  &client_address_size);
@@ -183,17 +216,9 @@ int main(){
             continue;
         }
         struct request req;
-        handle_client(server_fd, client_fd, request, buffer);
 
 
-        char line[1000];
-
-        struct request *r = &req;
-
-        parse_request(buffer, r);
-
-        printf("%s %s \n", r->methode, r->host);
-   
+        handle_client(server_fd, client_fd, buffer_request, &req);
     }
 
 }
