@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define PORT 8081
+
 
 
 
@@ -29,7 +31,7 @@ int setup_server(){
     memset(&server_address, 0 , sizeof(server_address));
     //server_ipv4_socket parameters,  0.0.0.0:8080
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(8080);
+    server_address.sin_port = htons(PORT);
     server_address.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int opt = 1;
@@ -133,33 +135,51 @@ int parse_request(char* buffer, struct request *r){
     return 0;
 }
 
+int status_code(struct request *r, int parse_request_return){
+
+    if(parse_request_return == -1) return 400;
+    if(strcmp(r->methode, "GET") != 0) return 405; //unkown methode
+    if(strcmp(r->path, "/about") ==0 ) return 200;
+    if(strcmp(r->path, "/contact") == 0 ) return 200;
+    
+    return 404;
+}
+
 int respond(char* buffer, struct request *r, int parse_request_return){
 
-    int status_code = 404;
-    char *header_something = "Not Found";
-    char *body = "404 page not found";
-    char chosen_path_from_the_client[256];
+    int status_cod = status_code(r, parse_request_return);
+    char *header_something ;
+    char *body;
     int result;
 
-    if(parse_request_return == -1){
-        int status_code = 400;
-        body = "bad Request";
-    }
-    if(strcmp(r->methode, "GET") == 0) {
 
+    if(status_cod == 404){
+        header_something = "Not Found";
+        body = "404 page not found";
+    }
+
+    if(status_cod == 405){
+        header_something = "Method Not Allowed";
+        body = "Error 405 (Method Not Allowed)!!1";
+    }
+    if(status_cod == 400){
+         header_something = "Parse Failed";
+        body = "Server Error";
+    }
+
+    if(status_cod == 200) {
         if(strcmp(r->path, "/contact")==0){
-            status_code = 200;
             header_something = "OK";
             body = "contact";
         }
-        if(strcmp(r->path, "/about")==0){
-            status_code = 200;
+        else if(strcmp(r->path, "/about")==0){
             header_something = "OK";
             body = "about";
         }
+
     
         
-    }result = snprintf(buffer,1000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnetion: close\r\n\r\n%s", status_code, header_something, strlen(body), body);
+    }result = snprintf(buffer,1000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
 
     return result;
     
@@ -186,9 +206,8 @@ int respond(char* buffer, struct request *r, int parse_request_return){
         int parse_request_return = parse_request(buffer_request, r);
        
         char buffer_respond[4096];
-        respond(buffer_respond, r, parse_request_return);
-        if(parse_request_return == -1) return -1;
         
+        respond(buffer_respond, r, parse_request_return);
         if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) perror("send");
 
         close(client_fd);
@@ -203,11 +222,16 @@ int respond(char* buffer, struct request *r, int parse_request_return){
 int main(){
 
     char buffer_request[4096];
+    
+
     int server_fd = setup_server();
 
     struct sockaddr_in client_address;
     socklen_t client_address_size = sizeof(client_address);
     int client_fd;
+
+
+    
     while(1)
     {
         client_fd = accept(server_fd, (struct sockaddr *) &client_address,  &client_address_size);
