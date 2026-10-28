@@ -9,10 +9,6 @@
 
 #define PORT 8081
 
-
-
-
-
 struct request{
 
     char methode[16];
@@ -134,6 +130,24 @@ int parse_request(char* buffer, struct request *r){
     if(result != 0) return -1;
     return 0;
 }
+int check_path(char *path){
+    char* sus = strstr(path, "..");
+    if(sus == NULL) return 0;
+    else return -1;
+}
+int read_file(char* path, char* output , size_t file_bytes) {
+
+    if(check_path(path) == -1) return -1;
+
+    FILE *f = fopen(path, "rb");
+    if(f ==NULL) {perror("fopen"); return -1;}
+    size_t n = fread(output, 1, file_bytes, f);
+    output[n] = '\0';
+
+    printf("%s\n", output);
+    return 0;
+
+}
 
 int status_code(struct request *r, int parse_request_return){
 
@@ -153,6 +167,7 @@ int respond(char* buffer, struct request *r, int parse_request_return){
     int result;
 
 
+
     if(status_cod == 404){
         header_something = "Not Found";
         body = "404 page not found";
@@ -170,15 +185,14 @@ int respond(char* buffer, struct request *r, int parse_request_return){
     if(status_cod == 200) {
         if(strcmp(r->path, "/contact")==0){
             header_something = "OK";
-            body = "contact";
+            if(read_file(r->path, body, 4000) == -1) return -1;
+            //body = "contact";
         }
         else if(strcmp(r->path, "/about")==0){
             header_something = "OK";
             body = "about";
         }
 
-    
-        
     }result = snprintf(buffer,1000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
 
     return result;
@@ -199,7 +213,6 @@ int respond(char* buffer, struct request *r, int parse_request_return){
             return -1;
         }
 
-        
         buffer_request[bytes_read] = '\0';
         memset(r, 0, sizeof(*r));
 
@@ -214,23 +227,19 @@ int respond(char* buffer, struct request *r, int parse_request_return){
         break;
     }
  }
-        
-
-
+//this function will buld the path, after it make sure there is no payload, now it checks just for normal text "..", the attacker can bypass it by write it in ASCII.
+//so we need to decode the ascii then check.
 
 
 int main(){
 
-    char buffer_request[4096];
-    
 
+    char buffer_request[4096];
     int server_fd = setup_server();
 
     struct sockaddr_in client_address;
     socklen_t client_address_size = sizeof(client_address);
     int client_fd;
-
-
     
     while(1)
     {
@@ -240,8 +249,6 @@ int main(){
             continue;
         }
         struct request req;
-
-
         handle_client(server_fd, client_fd, buffer_request, &req);
     }
 
