@@ -135,38 +135,45 @@ int check_path(char *path){
     if(sus == NULL) return 0;
     else return -1;
 }
-int read_file(char* path, char* output , size_t file_bytes) {
-
-    if(check_path(path) == -1) return -1;
+int read_file(char* path, char* file_content , size_t file_bytes) {
 
     FILE *f = fopen(path, "rb");
     if(f ==NULL) {perror("fopen"); return -1;}
-    size_t n = fread(output, 1, file_bytes, f);
-    output[n] = '\0';
-
-    printf("%s\n", output);
-    return 0;
+    size_t n = fread(file_content, 1, file_bytes, f);
+    file_content[n] = '\0';
+    fclose(f);
+    return n;
 
 }
 
-int status_code(struct request *r, int parse_request_return){
+int status_code(struct request *r, int parse_request_return, char* file_content, size_t file_size_bytes){
 
     if(parse_request_return == -1) return 400;
     if(strcmp(r->methode, "GET") != 0) return 405; //unkown methode
-    if(strcmp(r->path, "/about") ==0 ) return 200;
-    if(strcmp(r->path, "/contact") == 0 ) return 200;
-    
+    if(check_path(r->path) != -1) {
+        //constructing the directory from r.path for read_file to read
+        char directory[264];
+        snprintf(directory, 264, "www%s", r->path);
+        printf("%s\n", directory);
+
+        //we are taking file_content and place write on it the content of the directory
+        if(read_file(directory, file_content, file_size_bytes) != -1) return 200;
+    }
     return 404;
 }
 
 int respond(char* buffer, struct request *r, int parse_request_return){
 
-    int status_cod = status_code(r, parse_request_return);
+    
     char *header_something ;
+    size_t file_size = 4000;
+    char file_content[file_size];
     char *body;
     int result;
-
-
+  
+    int status_cod = status_code(r, parse_request_return, file_content, file_size);
+    printf("%d/n", status_cod);
+ 
 
     if(status_cod == 404){
         header_something = "Not Found";
@@ -181,20 +188,13 @@ int respond(char* buffer, struct request *r, int parse_request_return){
          header_something = "Parse Failed";
         body = "Server Error";
     }
-
     if(status_cod == 200) {
-        if(strcmp(r->path, "/contact")==0){
-            header_something = "OK";
-            if(read_file(r->path, body, 4000) == -1) return -1;
-            //body = "contact";
-        }
-        else if(strcmp(r->path, "/about")==0){
-            header_something = "OK";
-            body = "about";
-        }
+        body = file_content;
+        header_something = "OK";
+    }
 
-    }result = snprintf(buffer,1000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
-
+    result = snprintf(buffer,100000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
+   
     return result;
     
 }
