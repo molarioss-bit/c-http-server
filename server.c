@@ -132,12 +132,14 @@ int parse_request(char* buffer, struct request *r){
 }
 int check_path(char *path){
     char* sus = strstr(path, "..");
-    if(sus == NULL) return 0;
+
+    if(strcmp(path, "/") == 0) return -1;
+    else if(sus == NULL) return 0;
     else return -1;
 }
 int read_file(char* path, char* file_content , size_t file_bytes) {
 
-    FILE *f = fopen(path, "rb");
+    FILE *f = fopen(path, "rb"); 
     if(f ==NULL) {perror("fopen"); return -1;}
     size_t n = fread(file_content, 1, file_bytes, f);
     file_content[n] = '\0';
@@ -146,34 +148,41 @@ int read_file(char* path, char* file_content , size_t file_bytes) {
 
 }
 
-int status_code(struct request *r, int parse_request_return, char* file_content, size_t file_size_bytes){
+int status_code(struct request *r, int parse_request_return, char* file_content, size_t file_size_bytes, size_t *file_real_size){
 
     if(parse_request_return == -1) return 400;
     if(strcmp(r->methode, "GET") != 0) return 405; //unkown methode
+    int i = check_path(r->path);  printf("%d\n", i);
+
+    if(check_path(r->path) == -1) return 404;
     if(check_path(r->path) != -1) {
+        
         //constructing the directory from r.path for read_file to read
         char directory[264];
         snprintf(directory, 264, "www%s", r->path);
+        printf("%s\n", r->path);
         printf("%s\n", directory);
 
-        //we are taking file_content and place write on it the content of the directory
-        if(read_file(directory, file_content, file_size_bytes) != -1) return 200;
+        //we are taking file_content and place write on it the content of the directory, readfile return -1 or the file size,
+        *file_real_size = read_file(directory, file_content, file_size_bytes);
+        if(*file_real_size != -1) return 200;
     }
     return 404;
 }
 
 int respond(char* buffer, struct request *r, int parse_request_return){
 
-    
     char *header_something ;
-    size_t file_size = 4000;
-    char file_content[file_size];
+    size_t file_size_limit = 200000;
+    size_t file_real_size;
+    char file_content[file_size_limit];
     char *body;
+    int header_length;
     int result;
   
-    int status_cod = status_code(r, parse_request_return, file_content, file_size);
-    printf("%d/n", status_cod);
- 
+    int status_cod = status_code(r, parse_request_return, file_content, file_size_limit, &file_real_size);
+    printf("%d and %zu\n", status_cod, file_real_size);
+
 
     if(status_cod == 404){
         header_something = "Not Found";
@@ -191,9 +200,10 @@ int respond(char* buffer, struct request *r, int parse_request_return){
     if(status_cod == 200) {
         body = file_content;
         header_something = "OK";
+        header_length = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, file_real_size, body);
+        return result;
     }
-
-    result = snprintf(buffer,100000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
+    result = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
    
     return result;
     
@@ -218,7 +228,7 @@ int respond(char* buffer, struct request *r, int parse_request_return){
 
         int parse_request_return = parse_request(buffer_request, r);
        
-        char buffer_respond[4096];
+        char buffer_respond[250000];
         
         respond(buffer_respond, r, parse_request_return);
         if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) perror("send");
