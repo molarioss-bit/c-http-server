@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 
 #define PORT 8081
 
@@ -49,22 +50,20 @@ int setup_server(){
     return listen_fd;
 }
 
-int readline(char* buffer, char* line, int line_n){
+int readline(char* buffer, char* line, int line_n, size_t max_line_size){
 
     char* current_buffer = buffer;
     for(int i = 1; i <= line_n; i++){
 
         char* end_of_line = strstr(current_buffer, "\r\n");
-
         if(end_of_line == NULL)  return -1;
         
         size_t n = end_of_line - current_buffer;
 
         if(i == line_n){
 
-            if(n == 0){
-            return 0;
-            } 
+            if(n == 0) return 0;
+            if(n >= max_line_size) return -1;
             memcpy(line, current_buffer, n);
             line[n] = '\0';
             return 1;
@@ -105,7 +104,10 @@ int parse_request(char* buffer, struct request *r){
     char value[256];
     char left[256];
 
-    if(readline(buffer, line, 1) == -1) return -1;
+    if(readline(buffer, line, 1, sizeof(line)) == -1){
+        printf("here where the error\n");
+        return -1;
+    }   
     if(split_line(line, r->methode, sizeof(r->methode), left, sizeof(left), ' ') == -1) return -1;
     if(split_line(left, r->path, sizeof(r->path), value, sizeof(value), ' ') == -1) return -1;
 
@@ -113,7 +115,7 @@ int parse_request(char* buffer, struct request *r){
     
     int result;
 
-    for(int i = 2; (result= readline(buffer, line, i)) == 1; i++){
+    for(int i = 2; (result= readline(buffer, line, i, sizeof(line))) == 1; i++){
 
         if(split_line(line, name, sizeof(name), value, sizeof(value), ':') == -1) return -1;
 
@@ -131,6 +133,7 @@ int parse_request(char* buffer, struct request *r){
     return 0;
 }
 int check_path(char *path){
+
     char* sus = strstr(path, "..");
 
     if(strcmp(path, "/") == 0) return -1;
@@ -152,7 +155,7 @@ int status_code(struct request *r, int parse_request_return, char* file_content,
 
     if(parse_request_return == -1) return 400;
     if(strcmp(r->methode, "GET") != 0) return 405; //unkown methode
-    int i = check_path(r->path);  printf("%d\n", i);
+    int i = check_path(r->path);  printf("check path return is :%d\n", i);
 
     if(check_path(r->path) == -1) return 404;
     if(check_path(r->path) != -1) {
@@ -200,7 +203,7 @@ int respond(char* buffer, struct request *r, int parse_request_return){
     if(status_cod == 200) {
         body = file_content;
         header_something = "OK";
-        header_length = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, file_real_size, body);
+        header_length = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/html\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, file_real_size, body);
         return result;
     }
     result = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
@@ -227,14 +230,14 @@ int respond(char* buffer, struct request *r, int parse_request_return){
         memset(r, 0, sizeof(*r));
 
         int parse_request_return = parse_request(buffer_request, r);
-       
         char buffer_respond[250000];
-        
         respond(buffer_respond, r, parse_request_return);
-        if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) perror("send");
-
-        close(client_fd);
-        break;
+        if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) {
+            perror("send");
+            close(client_fd);
+            return -1;
+        }
+        if(close(client_fd) == 0) return 0;
     }
  }
 //this function will buld the path, after it make sure there is no payload, now it checks just for normal text "..", the attacker can bypass it by write it in ASCII.
@@ -250,16 +253,40 @@ int main(){
     struct sockaddr_in client_address;
     socklen_t client_address_size = sizeof(client_address);
     int client_fd;
+
+    pid_t pid;
     
     while(1)
     {
         client_fd = accept(server_fd, (struct sockaddr *) &client_address,  &client_address_size);
-        if(client_fd == -1){
-            printf("connnection failed");
-            continue;
+        
+        pid = fork();
+        int status = -77;
+    
+        if(pid > 0){
+            close(client_fd);
         }
-        struct request req;
-        handle_client(server_fd, client_fd, buffer_request, &req);
+
+        //child procces
+        if(pid ==  0){
+            
+            struct request req;
+            int i = handle_client(server_fd, client_fd, buffer_request, &req);
+            close(server_fd);
+            if(i == 0) exit(0);
+            if(i == -1) exit(1);
+        }
+
+        pid_t r;
+        for(;;){
+            r = waitpid(-1, &status, WNOHANG);
+            if(r > 0){ 
+
+            if(WIFEXITED(status)) printf("%d\n", WEXITSTATUS(status));
+            printf("terminated\n");
+            }
+            else break;
+        }
     }
 
 }
