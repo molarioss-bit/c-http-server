@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 
 #define PORT 8081
+#define MAX_CLIENTS 5
 
 struct request{
 
@@ -232,6 +233,8 @@ int respond(char* buffer, struct request *r, int parse_request_return){
         int parse_request_return = parse_request(buffer_request, r);
         char buffer_respond[250000];
         respond(buffer_respond, r, parse_request_return);
+
+        sleep(5);
         if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) {
             perror("send");
             close(client_fd);
@@ -255,14 +258,27 @@ int main(){
     int client_fd;
 
     pid_t pid;
+    int active = 0;
+    
     
     while(1)
     {
         client_fd = accept(server_fd, (struct sockaddr *) &client_address,  &client_address_size);
+
+        while(waitpid(-1, NULL, WNOHANG) > 0) active --;
+
+        if(active >= MAX_CLIENTS) {
+            printf("max_client amount reached\n");
+            close(client_fd);
+            continue;
+        }
         
         pid = fork();
-        int status = -77;
-    
+        
+        //jere we are implimenting a limit to the clients that connect to our server
+        //I'm trying to defend agains a ddos attack, so the server dont run out of processes
+
+
         if(pid > 0){
             close(client_fd);
         }
@@ -276,18 +292,10 @@ int main(){
             if(i == 0) exit(0);
             if(i == -1) exit(1);
         }
-
-        pid_t r;
-        for(;;){
-            r = waitpid(-1, &status, WNOHANG);
-            if(r > 0){ 
-
-            if(WIFEXITED(status)) printf("%d\n", WEXITSTATUS(status));
-            printf("terminated\n");
-            }
-            else break;
-        }
+       
+        active ++;
     }
-
 }
+
+
 
