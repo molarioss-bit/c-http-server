@@ -198,13 +198,13 @@ int respond(char* buffer, struct request *r, int parse_request_return){
         body = "Error 405 (Method Not Allowed)!!1";
     }
     if(status_cod == 400){
-         header_something = "Parse Failed";
+         header_something = "Bad Request";
         body = "Server Error";
     }
     if(status_cod == 200) {
         body = file_content;
         header_something = "OK";
-        header_length = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/html\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, file_real_size, body);
+        result = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/html\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, file_real_size, body);
         return result;
     }
     result = snprintf(buffer,250000, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s", status_cod, header_something, strlen(body), body);
@@ -232,9 +232,9 @@ int respond(char* buffer, struct request *r, int parse_request_return){
 
         int parse_request_return = parse_request(buffer_request, r);
         char buffer_respond[250000];
+
         respond(buffer_respond, r, parse_request_return);
 
-        sleep(5);
         if(send(client_fd,buffer_respond , strlen(buffer_respond),0) == -1) {
             perror("send");
             close(client_fd);
@@ -265,22 +265,30 @@ int main(){
     {
         client_fd = accept(server_fd, (struct sockaddr *) &client_address,  &client_address_size);
 
-        while(waitpid(-1, NULL, WNOHANG) > 0) active --;
+        if(client_fd < 0){
+            perror("accept");
+            continue;
+        }
 
+        while(waitpid(-1, NULL, WNOHANG) > 0) active --;
         if(active >= MAX_CLIENTS) {
             printf("max_client amount reached\n");
+            char buffer2[1000];
+            snprintf(buffer2, 1000, "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: 42\r\n\r\n503 Service Unavailable: Server overloaded");
+            send(client_fd,buffer2 , strlen(buffer2),0);
             close(client_fd);
-            continue;
+           continue;
         }
         
         pid = fork();
         
         //jere we are implimenting a limit to the clients that connect to our server
-        //I'm trying to defend agains a ddos attack, so the server dont run out of processes
+        //I'm trying to defend agains ja ddos attack, so the server dont run out of processes
 
 
         if(pid > 0){
             close(client_fd);
+            active ++;
         }
 
         //child procces
@@ -293,7 +301,7 @@ int main(){
             if(i == -1) exit(1);
         }
        
-        active ++;
+        
     }
 }
 
