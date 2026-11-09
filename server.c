@@ -167,7 +167,7 @@ int read_file(char *path, char *file_content, size_t file_bytes) {
     perror("fopen");
     return -1;
   }
-  size_t n = fread(file_content, 1, file_bytes, f);
+  size_t n = fread(file_content, 1, file_bytes - 1, f);
   file_content[n] = '\0';
   fclose(f);
   return n;
